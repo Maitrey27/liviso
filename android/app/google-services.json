@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "732277022211",
+    "project_id": "livisoapp",
+    "storage_bucket": "livisoapp.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:732277022211:android:db2ac385a5630218cff836",
+        "android_client_info": {
+          "package_name": "com.example.liviso"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCCN-D29gRPq6BpCB58NODLY3MKhWf74VU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
