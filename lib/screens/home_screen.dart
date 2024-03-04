@@ -123,6 +123,20 @@ class _HomeScreenState extends State<HomeScreen> {
         // Save the updated list to SharedPreferences
         await _saveUserPhotoUrls();
 
+        // Create a Firestore collection for user photos
+        final CollectionReference userPhotosCollection = FirebaseFirestore
+            .instance
+            .collection('user_photos')
+            .doc(eventId)
+            .collection('photos');
+
+        // Add the uploaded image to Firestore
+        await userPhotosCollection.add({
+          'eventId': userId,
+          'downloadURL': downloadURL,
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+
         // Update or create the event in Firestore with the uploaded image URL
         final eventDocRef =
             FirebaseFirestore.instance.collection('events').doc(eventId);
@@ -152,7 +166,13 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     } catch (e) {
-      print("Error uploading image to Firebase: $e");
+      // Handle both Firebase and Firestore errors here
+      print("Error: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+        ),
+      );
     }
   }
 
@@ -204,8 +224,10 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final querySnapshot =
           await FirebaseFirestore.instance.collection('events').get();
+
       return querySnapshot.docs
-          .map((doc) => doc['eventName'] as String)
+          .where((doc) => doc.data().containsKey('eventName'))
+          .map((doc) => (doc.data()['eventName'] as String?) ?? "")
           .toList();
     } catch (e) {
       print("Error fetching events: $e");
@@ -213,13 +235,62 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _viewPhotos() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => PhotosScreen(userPhotoUrls: _userPhotoUrls),
-      ),
+  Future<void> _viewPhotos() async {
+    // Fetch the list of events from Firestore
+    List<String> events = await fetchEvents();
+
+    // Show a dialog to let the user choose the event
+    String? selectedEvent = await showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        String? event;
+        return AlertDialog(
+          title: Text('Select Event'),
+          content: DropdownButtonFormField<String>(
+            value: event,
+            items: events.map((event) {
+              return DropdownMenuItem<String>(
+                value: event,
+                child: Text(event),
+              );
+            }).toList(),
+            onChanged: (value) {
+              event = value;
+            },
+            decoration: InputDecoration(
+              hintText: 'Choose an event',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context, event);
+              },
+              child: Text('View Photos'),
+            ),
+          ],
+        );
+      },
     );
+
+    // Check if an event is selected before navigating to the photos screen
+    if (selectedEvent != null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PhotosScreen(
+            userPhotoUrls: _userPhotoUrls,
+            eventId: selectedEvent,
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _createEvent() async {
@@ -285,8 +356,13 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: Text('Cancel'),
                         ),
                         TextButton(
-                          onPressed: () {
+                          onPressed: () async {
                             Navigator.pop(context, event);
+
+                            // Pass the selected event ID to viewPhotos
+                            if (event != null) {
+                              await _viewPhotos();
+                            }
                           },
                           child: Text('Upload'),
                         ),

@@ -16,8 +16,11 @@ import 'qr_code_screen.dart';
 
 class PhotosScreen extends StatefulWidget {
   final List<String> userPhotoUrls;
+  final String eventId;
 
-  const PhotosScreen({Key? key, required this.userPhotoUrls}) : super(key: key);
+  const PhotosScreen(
+      {Key? key, required this.userPhotoUrls, required this.eventId})
+      : super(key: key);
 
   @override
   _PhotosScreenState createState() => _PhotosScreenState();
@@ -36,26 +39,32 @@ class _PhotosScreenState extends State<PhotosScreen> {
   @override
   void initState() {
     super.initState();
-    _loadUserPhotoUrls();
+    _loadUserPhotoUrls(widget.eventId);
   }
 
-  Future<void> _loadUserPhotoUrls() async {
+  Future<void> _loadUserPhotoUrls(String eventId) async {
     final userId = _auth.currentUser?.uid;
     if (userId != null) {
-      // Fetch URLs from Firestore
-      final snapshot = await FirebaseFirestore.instance
-          .collection('user_photos')
-          .doc(userId)
-          .collection('photos')
-          .orderBy('timestamp', descending: true)
-          .get();
+      try {
+        // Fetch URLs from Firestore
+        final snapshot = await FirebaseFirestore.instance
+            .collection('user_photos')
+            .doc(eventId)
+            .collection('photos')
+            .orderBy('timestamp', descending: true)
+            .get();
 
-      final urls =
-          snapshot.docs.map((doc) => doc['imageUrl'].toString()).toList();
+        final urls = snapshot.docs
+            .map((doc) =>
+                (doc.data() as Map<String, dynamic>)['downloadURL'].toString())
+            .toList();
 
-      setState(() {
-        _userPhotoUrls = urls;
-      });
+        setState(() {
+          _userPhotoUrls = urls;
+        });
+      } catch (e) {
+        print("Error loading user photo URLs: $e");
+      }
     }
   }
 
@@ -216,19 +225,41 @@ class _PhotosScreenState extends State<PhotosScreen> {
   }
 
   void _deleteImage(String imageUrl) async {
-    try {
-      // Delete the image from Firebase Storage
-      final Reference storageReference =
-          FirebaseStorage.instance.refFromURL(imageUrl);
-      await storageReference.delete();
+    // Check if the image URL exists in the list
+    if (!_userPhotoUrls.contains(imageUrl)) {
+      Fluttertoast.showToast(
+        msg: 'Image does not exist.',
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+      );
+      return;
+    }
 
+    try {
       // Remove the image URL from the list
       setState(() {
-        widget.userPhotoUrls.remove(imageUrl);
+        _userPhotoUrls.remove(imageUrl);
       });
 
       // Save the updated list to SharedPreferences
       await _saveUserPhotoUrls();
+
+      // Delete the image information from Firestore
+      final CollectionReference userPhotosCollection = FirebaseFirestore
+          .instance
+          .collection('user_photos')
+          .doc(widget.eventId)
+          .collection('photos');
+
+      // Query Firestore to find the document with the specified downloadURL
+      QuerySnapshot<Map<String, dynamic>> snapshot = await userPhotosCollection
+          .where('downloadURL', isEqualTo: imageUrl)
+          .get() as QuerySnapshot<Map<String, dynamic>>;
+
+      if (snapshot.docs.isNotEmpty) {
+        // Delete the document corresponding to the image URL
+        await userPhotosCollection.doc(snapshot.docs.first.id).delete();
+      }
 
       Fluttertoast.showToast(
         msg: 'Image deleted successfully!',
@@ -236,7 +267,7 @@ class _PhotosScreenState extends State<PhotosScreen> {
         gravity: ToastGravity.BOTTOM,
       );
     } catch (e) {
-      print("Error deleting image from Firebase Storage: $e");
+      print("Error deleting image: $e");
       Fluttertoast.showToast(
         msg: 'Error deleting image. Please try again.',
         toastLength: Toast.LENGTH_SHORT,

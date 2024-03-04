@@ -62,6 +62,7 @@ dependencies:
   cached_network_image: ^3.3.1
   image: ^4.1.7
   cloud_firestore: ^4.15.6
+  flutter_image_compress: ^2.1.0
 
 dev_dependencies:
   flutter_test:
