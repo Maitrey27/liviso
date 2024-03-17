@@ -1,0 +1,38 @@
+Future<void> _loadUserPhotoUrls(String eventId) async {
+    final userId = _auth.currentUser?.uid;
+    if (userId != null) {
+      try {
+        // Check if the current user is the creator of the event
+        final isEventCreator = await FirebaseFirestore.instance
+            .collection('events')
+            .doc(eventId)
+            .get()
+            .then((eventSnapshot) =>
+                eventSnapshot.data()?['organizerUserId'] == userId);
+
+        // Fetch URLs from Firestore
+        final snapshot = await FirebaseFirestore.instance
+            .collection('user_photos')
+            .doc(eventId)
+            .collection('photos')
+            .orderBy('timestamp', descending: true)
+            .get();
+
+        final urls = snapshot.docs
+            .where((doc) =>
+                isEventCreator ||
+                (doc.data()['eventId'] == userId &&
+                    widget.userPhotoUrls.contains(
+                        (doc.data() as Map<String, dynamic>)['downloadURL'])))
+            .map((doc) =>
+                (doc.data() as Map<String, dynamic>)['downloadURL'].toString())
+            .toList();
+
+        setState(() {
+          _userPhotoUrls = urls;
+        });
+      } catch (e) {
+        print("Error loading user photo URLs: $e");
+      }
+    }
+  }

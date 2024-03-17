@@ -1,11 +1,10 @@
+import 'dart:async';
 import 'dart:typed_data';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:url_launcher/url_launcher.dart';
-import 'package:flutter/services.dart'; // Import the services package
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:liviso/screens/qr_code_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ScanCodePage extends StatefulWidget {
   const ScanCodePage({Key? key}) : super(key: key);
@@ -32,96 +31,91 @@ class _ScanCodePageState extends State<ScanCodePage> {
             ),
             onDetect: (capture) {
               final List<Barcode> barcodes = capture.barcodes;
-              final Uint8List? image = capture.image;
               for (final barcode in barcodes) {
                 print('Barcode found! ${barcode.rawValue}');
-                _showQRCodeDialog(
-                    barcode.rawValue); // Show dialog with QR code details
-              }
-              if (image != null) {
-                showDialog(
-                  context: context,
-                  builder: (context) {
-                    return AlertDialog(
-                      title: Text(
-                        barcodes.first.rawValue ?? "",
-                      ),
-                      content: InkWell(
-                        onTap: () {
-                          _showQRCodeDialog(barcodes.first.rawValue);
-                        },
-                        child: Image(
-                          image: MemoryImage(image),
-                        ),
-                      ),
-                    );
-                  },
-                );
+                _fetchEventNameAndShowDialogFromUrl(barcode.rawValue);
               }
             },
-          ),
-          Positioned(
-            bottom: 30,
-            left: 30,
-            child: ElevatedButton(
-              onPressed: () async {
-                final userId = _auth.currentUser?.uid;
-                if (userId != null) {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => QrCodeScreen(eventId: userId),
-                    ),
-                  );
-                } else {}
-              },
-              child: Text('Generate QR Code'),
-            ),
           ),
         ],
       ),
     );
   }
 
-  // Function to show the QR code details and provide options to copy or open URL
-  void _showQRCodeDialog(String? url) {
+  void _fetchEventNameAndShowDialogFromUrl(String? url) {
+    try {
+      if (url != null && url.isNotEmpty) {
+        final Uri uri = Uri.parse(url);
+        final String? eventId = uri.queryParameters['eventId'];
+        final String? userId = uri.queryParameters['userId'];
+
+        if (eventId != null &&
+            eventId.isNotEmpty &&
+            userId != null &&
+            userId.isNotEmpty) {
+          _fetchEventNameAndShowDialog(eventId, userId);
+        } else {
+          print('Event ID or User ID not found in URL: $url');
+        }
+      } else {
+        print('Invalid URL');
+      }
+    } catch (e) {
+      print("Error parsing URL: $e");
+    }
+  }
+
+  void _fetchEventNameAndShowDialog(String eventId, String userId) async {
+    try {
+      // Fetch event name from Firestore using the eventId
+      final DocumentSnapshot eventSnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('events')
+          .doc(eventId)
+          .get();
+
+      if (eventSnapshot.exists) {
+        final Map<String, dynamic> eventData =
+            eventSnapshot.data() as Map<String, dynamic>;
+        final String eventName = eventData['eventName'];
+
+        // Show dialog to join the event
+        _showJoinEventDialog(eventName, eventId, userId);
+      } else {
+        print("Event not found with ID: $eventId");
+      }
+    } catch (e) {
+      print("Error fetching event details: $e");
+    }
+  }
+
+  void _showJoinEventDialog(String eventName, String eventId, String userId) {
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: Text("QR Code Details"),
+          title: Text("Join Event"),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CachedNetworkImage(
-                // Use CachedNetworkImage instead of Image.network
-                imageUrl: url ?? '',
-                placeholder: (context, url) => CircularProgressIndicator(),
-                errorWidget: (context, url, error) => Icon(Icons.error),
-              ),
-              SizedBox(height: 16),
-              SelectableText(
-                url ?? '',
-                style: TextStyle(fontSize: 16),
-                textAlign: TextAlign.center,
-              ),
+              Text("Do you want to join the event \"$eventName\"?"),
               SizedBox(height: 16),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  IconButton(
-                    icon: Icon(Icons.copy),
+                  ElevatedButton(
                     onPressed: () {
-                      _copyToClipboard(url);
-                      Navigator.pop(context);
+                      _joinEvent(eventId, userId);
+                      Navigator.pop(context); // Close the dialog
                     },
+                    child: Text('Join'),
                   ),
-                  IconButton(
-                    icon: Icon(Icons.open_in_browser),
+                  ElevatedButton(
                     onPressed: () {
-                      _launchURL(url);
-                      Navigator.pop(context);
+                      Navigator.pop(context); // Close the dialog
                     },
+                    child: Text('Cancel'),
                   ),
                 ],
               ),
@@ -132,19 +126,27 @@ class _ScanCodePageState extends State<ScanCodePage> {
     );
   }
 
-  void _launchURL(String? url) async {
-    if (url != null && await canLaunch(url)) {
-      await launch(url, forceSafariVC: false, forceWebView: false);
-    } else {
-      print('Could not launch $url');
-    }
-  }
+  Future<void> _joinEvent(String eventId, String userId) async {
+    final currentUserUid = _auth.currentUser?.uid;
 
-  // Function to copy text to clipboard
-  void _copyToClipboard(String? text) {
-    Clipboard.setData(ClipboardData(text: text ?? ''));
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('URL copied to clipboard'),
-    ));
+    if (currentUserUid != null) {
+      try {
+        // Add the current user's ID to the event's participants list
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(userId)
+            .collection('events')
+            .doc(eventId)
+            .update({
+          'participants': FieldValue.arrayUnion([currentUserUid]),
+        });
+
+        print("User $currentUserUid joined the event $eventId successfully!");
+      } catch (e) {
+        print("Error joining event: $e");
+      }
+    } else {
+      print("Error: Current user ID is null");
+    }
   }
 }

@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:dio/dio.dart';
@@ -11,16 +11,19 @@ import 'package:image_gallery_saver/image_gallery_saver.dart';
 import 'package:open_file/open_file.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:firebase_dynamic_links/firebase_dynamic_links.dart';
-import 'qr_code_screen.dart';
 
 class PhotosScreen extends StatefulWidget {
   final List<String> userPhotoUrls;
   final String eventId;
-
-  const PhotosScreen(
-      {Key? key, required this.userPhotoUrls, required this.eventId})
-      : super(key: key);
+  final File? selectedImage;
+  final String eventName;
+  const PhotosScreen({
+    Key? key,
+    required this.userPhotoUrls,
+    required this.eventId,
+    this.selectedImage,
+    required this.eventName,
+  }) : super(key: key);
 
   @override
   _PhotosScreenState createState() => _PhotosScreenState();
@@ -28,45 +31,133 @@ class PhotosScreen extends StatefulWidget {
 
 class _PhotosScreenState extends State<PhotosScreen> {
   FirebaseAuth _auth = FirebaseAuth.instance;
-  // Create a controller for the QR code scanner
-  final TextEditingController _qrCodeController = TextEditingController();
 
-  // Create a link to handle dynamic links
-  final FirebaseDynamicLinks _firebaseDynamicLinks =
-      FirebaseDynamicLinks.instance;
   List<String> _userPhotoUrls = [];
 
   @override
   void initState() {
     super.initState();
-    _loadUserPhotoUrls(widget.eventId);
+    // _loadUserPhotoUrls(widget.eventId);
+    loadPhotos(widget.eventName, widget.eventId);
   }
 
-  Future<void> _loadUserPhotoUrls(String eventId) async {
-    final userId = _auth.currentUser?.uid;
-    if (userId != null) {
-      try {
-        // Fetch URLs from Firestore
-        final snapshot = await FirebaseFirestore.instance
-            .collection('user_photos')
-            .doc(eventId)
-            .collection('photos')
-            .orderBy('timestamp', descending: true)
+  Future<void> loadPhotos(String eventName, String eventId) async {
+    try {
+      final userBId = _auth.currentUser?.uid;
+      if (userBId != null) {
+        final querySnapshot = await FirebaseFirestore.instance
+            .collectionGroup('events') // Search across all users' events
+            .where('eventName', isEqualTo: eventName)
+            .where('participants', arrayContains: userBId)
             .get();
 
-        final urls = snapshot.docs
-            .map((doc) =>
-                (doc.data() as Map<String, dynamic>)['downloadURL'].toString())
-            .toList();
+        if (querySnapshot.docs.isNotEmpty) {
+          final List<String> photoUrls = [];
+          for (final doc in querySnapshot.docs) {
+            final participants = doc.data()['participants'] as List<dynamic>;
+            final eventId = doc.id;
 
-        setState(() {
-          _userPhotoUrls = urls;
-        });
-      } catch (e) {
-        print("Error loading user photo URLs: $e");
+            print('Fetching photos for event ID $eventId');
+
+            final List<Future<QuerySnapshot>> futures = [];
+            for (final participantId in participants) {
+              print('Fetching photos for participant ID: $participantId');
+              final future = FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(participantId)
+                  .collection('events')
+                  .doc(eventId)
+                  .collection('photos')
+                  .get();
+              futures.add(future);
+            }
+
+            final snapshots = await Future.wait(futures);
+            for (final snapshot in snapshots) {
+              final List<String> eventPhotoUrls = snapshot.docs
+                  .map((photoDoc) {
+                    final data = photoDoc.data();
+                    if (data is Map<String, dynamic> &&
+                        data.containsKey('downloadURL')) {
+                      return data['downloadURL'] as String?;
+                    } else {
+                      return null;
+                    }
+                  })
+                  .where((url) => url != null)
+                  .cast<String>() // Cast to non-nullable String
+                  .toList();
+
+              photoUrls.addAll(eventPhotoUrls);
+            }
+          }
+
+          print('Total photo URLs for event $eventId: $photoUrls');
+
+          setState(() {
+            _userPhotoUrls = photoUrls;
+          });
+        } else {
+          print(
+              'No event found for event ID: $eventId and event name: $eventName');
+        }
+      } else {
+        print('User ID is null.');
       }
+    } catch (e) {
+      print("Error loading photos: $e");
     }
   }
+
+  // Future<void> _loadUserPhotoUrls(String eventId) async {
+  //   final user = _auth.currentUser;
+  //   if (user != null) {
+  //     try {
+  //       final eventSnapshot = await FirebaseFirestore.instance
+  //           .collection('users')
+  //           .doc(user.uid)
+  //           .collection('events')
+  //           .doc(eventId)
+  //           .get();
+
+  //       // Check if the event exists
+  //       if (eventSnapshot.exists) {
+  //         final eventData = eventSnapshot.data();
+  //         final organizerUserId = eventData?['organizerUserId'];
+  //         final participants = List<String>.from(eventData?['participants']);
+
+  //         // Check if the current user is the organizer or a participant
+  //         if (user.uid == organizerUserId || participants.contains(user.uid)) {
+  //           final snapshot = await FirebaseFirestore.instance
+  //               .collection('users')
+  //               .doc(user.uid)
+  //               .collection('events')
+  //               .doc(eventId)
+  //               .collection('photos')
+  //               .orderBy('timestamp', descending: true)
+  //               .get();
+
+  //           final urls = snapshot.docs
+  //               .map((doc) => doc['downloadURL'].toString())
+  //               .toList();
+
+  //           setState(() {
+  //             _userPhotoUrls = urls;
+  //           });
+  //         } else {
+  //           print('User is not authorized to view photos for this event.');
+  //           // Handle unauthorized access
+  //         }
+  //       } else {
+  //         print('Event not found.');
+  //         // Handle event not found
+  //       }
+  //     } catch (e) {
+  //       print("Error loading user photo URLs: $e");
+  //       // Handle error
+  //     }
+  //   }
+  // }
 
   @override
   Widget build(BuildContext context) {
@@ -247,7 +338,7 @@ class _PhotosScreenState extends State<PhotosScreen> {
       // Delete the image information from Firestore
       final CollectionReference userPhotosCollection = FirebaseFirestore
           .instance
-          .collection('user_photos')
+          .collection('events')
           .doc(widget.eventId)
           .collection('photos');
 

@@ -1,0 +1,85 @@
+ Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (_selectedImage != null)
+              Container(
+                height: 150,
+                width: 150,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.black),
+                ),
+                child: Image.file(_selectedImage!, fit: BoxFit.cover),
+              ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: _takePhoto,
+              child: const Text('Take Photo'),
+            ),
+            ElevatedButton(
+              onPressed: _pickImageFromGallery,
+              child: const Text('Pick Image from Gallery'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                // Fetch the list of events from Firestore
+                List<String> events = await fetchEvents();
+
+                // Show a dialog to let the user choose the event
+                String? selectedEvent = await showDialog(
+                  context: context,
+                  builder: (BuildContext context) {
+                    String? event;
+                    return AlertDialog(
+                      title: Text('Select Event'),
+                      content: DropdownButtonFormField<String>(
+                        value: event,
+                        items: events.map((event) {
+                          return DropdownMenuItem<String>(
+                            value: event,
+                            child: Text(event),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          event = value;
+                        },
+                        decoration: InputDecoration(
+                          hintText: 'Choose an event',
+                        ),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () {
+                            Navigator.pop(context);
+                          },
+                          child: Text('Cancel'),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            Navigator.pop(context, event);
+                          },
+                          child: Text('Upload'),
+                        ),
+                      ],
+                    );
+                  },
+                );
+
+                // Check if an event is selected before calling the image upload function
+                if (selectedEvent != null) {
+                  await _uploadImageToFirebase(selectedEvent);
+                }
+              },
+              child: const Text('Upload Image '),
+            ),
+            ElevatedButton(
+              onPressed: _viewPhotos,
+              child: const Text('View Photos'),
+            ),
+            ElevatedButton(
+              onPressed: _createEvent,
+              child: const Text('Create Event'),
+            ),
+          ],
+        ),
+      ),

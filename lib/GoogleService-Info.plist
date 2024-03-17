@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>732277022211-0ah375iulsloir107jl3031kda20kkql.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.732277022211-0ah375iulsloir107jl3031kda20kkql</string>
+	<key>ANDROID_CLIENT_ID</key>
+	<string>732277022211-jplcl57j4c9n6k3jlrn2qiio4ttgi1hc.apps.googleusercontent.com</string>
+	<key>API_KEY</key>
+	<string>AIzaSyAE5AviXASbQN8XyWbub0t8qy-lGYFr3SY</string>
+	<key>GCM_SENDER_ID</key>
+	<string>732277022211</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.example.liviso</string>
+	<key>PROJECT_ID</key>
+	<string>livisoapp</string>
+	<key>STORAGE_BUCKET</key>
+	<string>livisoapp.appspot.com</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:732277022211:ios:f899a19d0cfc2b2acff836</string>
+</dict>
+</plist>
