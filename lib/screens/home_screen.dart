@@ -22,6 +22,7 @@ import 'package:liviso/screens/preview_photo_screen.dart';
 import 'package:liviso/screens/qr_code_screen.dart';
 
 import 'package:liviso/screens/qr_scanner_screen.dart';
+import 'package:liviso/services/notifications_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -50,6 +51,12 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _loadUserPhotoUrls();
+    NotificationController.initializeLocalNotifications();
+    NotificationController.startListeningNotificationEvents();
+  }
+
+  void _updateEventList() {
+    setState(() {});
   }
 
   void _onItemTapped(int index) {
@@ -66,7 +73,10 @@ class _HomeScreenState extends State<HomeScreen> {
         // Navigate to the scan code screen
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (context) => ScanCodePage()),
+          MaterialPageRoute(
+              builder: (context) => ScanCodePage(
+                    onEventJoined: _updateEventList,
+                  )),
         );
         break;
       default:
@@ -94,36 +104,6 @@ class _HomeScreenState extends State<HomeScreen> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList(userId, _userPhotoUrls);
     }
-  }
-
-  void _scheduleNotification(
-    String eventId,
-    String eventName,
-    DateTime eventStartDateTime,
-    DateTime eventEndDateTime,
-    String notificationMessage,
-  ) {
-    // Calculate the time difference for scheduling the initial notification
-    final Duration timeDifference =
-        eventStartDateTime.difference(DateTime.now());
-
-    // Create a notification content with event details
-    final NotificationContent content = NotificationContent(
-      id: eventId.hashCode,
-      channelKey: 'basic_channel',
-      title: eventName,
-      body:
-          '$notificationMessage\nStart Time: ${_formatDateTime(eventStartDateTime)}\nEnd Time: ${_formatDateTime(eventEndDateTime)}',
-      payload: {
-        'eventId': eventId,
-      },
-    );
-
-    // Schedule the initial notification using awesome_notifications
-    AwesomeNotifications().createNotification(
-      content: content,
-      schedule: NotificationInterval(interval: timeDifference.inSeconds),
-    );
   }
 
   String _formatDateTime(DateTime dateTime) {
@@ -156,16 +136,6 @@ class _HomeScreenState extends State<HomeScreen> {
           eventImageUrl = imageUrl;
         });
 
-        // Create an event using the RemoteDataSource
-        // final Event event = Event(
-        //   id: eventId,
-        //   creatorId: userId,
-        //   attendeeIds: [userId],
-        // );
-
-        // Add the event to Firestore using RemoteDataSource
-        // await _remoteDataSource.addEvent(event);
-
         // Create an event in Firestore with the generated event ID
         await FirebaseFirestore.instance
             .collection('users')
@@ -181,46 +151,142 @@ class _HomeScreenState extends State<HomeScreen> {
           'endDateTime': endDateTime,
         });
 
-        // Show Snackbar after event creation
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Event created successfully!'),
-          ),
-        );
-
+        _showEventCreatedSnackbar(eventName);
+        await _loadUserPhotoUrls();
         // Navigate to the QR Code screen with the event ID
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => QrCodeScreen(eventId: eventId),
+            builder: (context) => QrCodeScreen(
+              eventId: eventId,
+              eventName: eventName,
+            ),
           ),
         );
+        // Payload to be included in the notification
+        final Map<String, dynamic> payload = {
+          'eventName': eventName,
+          'eventId': eventId,
+          'eventStartDate': startDateTime.toIso8601String(),
+          'eventEndDate': endDateTime.toIso8601String(),
+        };
         // Show instant notification in the app
-        _showInstantNotification(eventName, startDateTime, endDateTime);
-
-        // Schedule additional notifications during the event
-        // while (DateTime.now().isBefore(endDateTime)) {
-        //   await Future.delayed(Duration(minutes: 30)); // Adjust delay as needed
-        //   _scheduleNotification(
-        //     eventId,
-        //     eventName,
-        //     startDateTime,
-        //     endDateTime,
-        //     'Event is ongoing!',
-        //   );
-        // }
+        _showInstantNotification(
+            eventName, startDateTime, endDateTime, payload);
       }
     } catch (e) {
       print("Error creating event: $e");
     }
   }
 
-  void _showInstantNotification(
-    String eventName,
-    DateTime startDateTime,
-    DateTime endDateTime,
-  ) {
+  void _showEventInstantNotification(
+      String eventId,
+      String eventName,
+      DateTime startDateTime,
+      DateTime endDateTime,
+      Map<String, dynamic> payload) async {
     // Display an instant notification in the app
+    final Map<String, String?> stringPayload = payload.map(
+      (key, value) => MapEntry(key, value.toString()),
+    );
+    final currentTime = DateTime.now();
+    if (currentTime.isBefore(endDateTime)) {
+      AwesomeNotifications().createNotification(
+        content: NotificationContent(
+          id: eventId.hashCode + 1,
+          channelKey:
+              'basic_channel', // Make sure this key matches your channel setup
+          title: 'Event Reminder',
+          body: 'Event "$eventName" is ongoing!',
+          payload: stringPayload,
+        ),
+        actionButtons: [
+          NotificationActionButton(
+            key: 'OPEN_EVENT_DETAILS',
+            label: 'View Event',
+          ),
+        ],
+      );
+    }
+  }
+
+  void _scheduleOngoingEventReminder(
+    String eventId,
+    String eventName,
+    DateTime eventStartTime,
+    DateTime eventEndTime,
+    Map<String, dynamic> payload,
+  ) async {
+    final Map<String, String?> stringPayload = payload.map(
+      (key, value) => MapEntry(key, value.toString()),
+    );
+    final currentTime = DateTime.now();
+
+    // Ensure event is ongoing (current time is before end time)
+    if (currentTime.isBefore(eventEndTime)) {
+      final localTimeZone =
+          await AwesomeNotifications().getLocalTimeZoneIdentifier();
+
+      await AwesomeNotifications().createNotification(
+        content: NotificationContent(
+          id: eventId.hashCode + 1, // Use a single ID for the ongoing reminder
+          channelKey: 'basic_channel',
+          title: 'Event Reminder',
+          body: 'Event "$eventName" is ongoing!',
+          payload: stringPayload,
+          actionType: ActionType.SilentAction,
+        ),
+        schedule: NotificationInterval(
+          interval: 10 * 60, // Interval in second
+          timeZone: localTimeZone,
+          repeats: true,
+          preciseAlarm: true, // Ensure timely delivery (optional)
+        ),
+        actionButtons: [
+          NotificationActionButton(
+            key: 'OPEN_EVENT_DETAILS',
+            label: 'View Event',
+          ),
+        ],
+      );
+    }
+  }
+
+  void _showEventCreatedSnackbar(String eventName) {
+    final snackBar = SnackBar(
+      elevation: 8.0,
+      backgroundColor: Colors.black38, // Background color of the snackbar
+      content: Container(
+        height: 50, // Adjust the height as needed
+        child: Row(
+          children: [
+            Icon(Icons.check_circle_outline, color: Colors.white), // Icon
+            SizedBox(width: 8.0),
+            Flexible(
+              child: Text(
+                'Event $eventName created successfully!', // Displayed text
+                style: TextStyle(color: Colors.blue, fontSize: 16.0),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      ),
+      behavior: SnackBarBehavior
+          .floating, // Make the snackbar float above other content
+      duration: Duration(seconds: 4), // Adjust duration as needed
+    );
+    ScaffoldMessenger.of(context).showSnackBar(snackBar);
+  }
+
+  void _showInstantNotification(String eventName, DateTime startDateTime,
+      DateTime endDateTime, Map<String, dynamic> payload) {
+    // Display an instant notification in the app
+    final Map<String, String?> stringPayload = payload.map(
+      (key, value) => MapEntry(key, value.toString()),
+    );
+
     AwesomeNotifications().createNotification(
       content: NotificationContent(
         id: 0,
@@ -229,6 +295,7 @@ class _HomeScreenState extends State<HomeScreen> {
         title: eventName,
         body:
             'Start Time: ${_formatDateTime(startDateTime)}\nEnd Time: ${_formatDateTime(endDateTime)}',
+        payload: stringPayload,
       ),
     );
   }
@@ -441,42 +508,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // Future<List<DocumentSnapshot>> fetchParticipantEvents() async {
-  //   try {
-  //     final userBId = _auth.currentUser?.uid; // Current user (user B)
-  //     if (userBId != null) {
-  //       final eventsSnapshot = await FirebaseFirestore.instance
-  //           .collectionGroup('events')
-  //           .where('participants', arrayContains: userBId)
-  //           .get();
-
-  //       print('Query snapshot length: ${eventsSnapshot.docs.length}');
-
-  //       List<DocumentSnapshot> participantEvents = [];
-
-  //       for (final eventDoc in eventsSnapshot.docs) {
-  //         final event = eventDoc.data();
-  //         final eventName = event['eventName'] as String;
-  //         final organizerId = event['organizerUserId'];
-
-  //         // Check if the organizer is not the current user
-  //         if (organizerId != userBId) {
-  //           participantEvents.add(eventDoc);
-  //         }
-  //       }
-
-  //       print('Participant events: $participantEvents');
-  //       return participantEvents;
-  //     } else {
-  //       print('User ID is null.');
-  //       return [];
-  //     }
-  //   } catch (e) {
-  //     print("Error fetching participant events: $e");
-  //     return [];
-  //   }
-  // }
-
   Future<List<Map<String, dynamic>>> fetchParticipantEvents() async {
     try {
       final userBId = _auth.currentUser?.uid; // Current user (user B)
@@ -487,6 +518,7 @@ class _HomeScreenState extends State<HomeScreen> {
             .get();
 
         List<Map<String, dynamic>> participantEvents = [];
+        final currentTime = DateTime.now();
 
         for (final eventDoc in eventsSnapshot.docs) {
           final event = eventDoc.data();
@@ -495,6 +527,8 @@ class _HomeScreenState extends State<HomeScreen> {
           final startTime = (event['startDateTime'] as Timestamp).toDate();
           final endTime = (event['endDateTime'] as Timestamp).toDate();
 
+          print('Event start time: $startTime');
+          print('Event end time: $endTime');
           // Check if the organizer is not the current user
           if (organizerId != null && organizerId != userBId) {
             participantEvents.add({
@@ -502,6 +536,36 @@ class _HomeScreenState extends State<HomeScreen> {
               'startTime': startTime,
               'endTime': endTime,
             });
+          }
+
+          // Schedule ongoing event reminder for each event participated by the user
+
+          if (currentTime.isBefore(endTime)) {
+            _scheduleOngoingEventReminder(
+              eventDoc.id,
+              eventName,
+              startTime,
+              endTime,
+              {
+                'eventId': eventDoc.id,
+                'eventName': eventName,
+                'eventStartDate': startTime.toIso8601String(),
+                'eventEndDate': endTime.toIso8601String(),
+              },
+            );
+
+            _showEventInstantNotification(
+              eventDoc.id,
+              eventName,
+              startTime,
+              endTime,
+              {
+                'eventId': eventDoc.id,
+                'eventName': eventName,
+                'eventStartDate': startTime.toIso8601String(),
+                'eventEndDate': endTime.toIso8601String(),
+              },
+            );
           }
         }
 
@@ -559,6 +623,14 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _refreshData() async {
+    // Implement your refresh logic here
+    // For example, refetch data from API
+    setState(() {
+      // Update the UI after refreshing data
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -603,18 +675,18 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-            ListTile(
-              title: Text('Toggle Dark Theme'),
-              trailing: Switch(
-                value: Theme.of(context).brightness == Brightness.dark,
-                onChanged: (value) {
-                  final dynamicTheme = EasyDynamicTheme.of(context);
-                  if (dynamicTheme != null) {
-                    dynamicTheme.changeTheme();
-                  }
-                },
-              ),
-            ),
+            // ListTile(
+            //   title: Text('Toggle Dark Theme'),
+            //   trailing: Switch(
+            //     value: Theme.of(context).brightness == Brightness.dark,
+            //     onChanged: (value) {
+            //       final dynamicTheme = EasyDynamicTheme.of(context);
+            //       if (dynamicTheme != null) {
+            //         dynamicTheme.changeTheme();
+            //       }
+            //     },
+            //   ),
+            // ),
             ListTile(
               title: Text(
                 'Terms and Conditions',
@@ -641,157 +713,221 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            // Events Created Section
-            Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Align(
-                    alignment: Alignment.topLeft,
-                    child: Text(
-                      'Events Created',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
+      body: RefreshIndicator(
+        onRefresh: _refreshData,
+        child: SingleChildScrollView(
+          physics: AlwaysScrollableScrollPhysics(),
+          child: Column(
+            children: [
+              // Events Created Section
+              Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: Text(
+                        'Events Created',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                FutureBuilder<List<Map<String, dynamic>>>(
-                  future: fetchUserEvents(),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return Center(child: CircularProgressIndicator());
-                    } else if (snapshot.hasError) {
-                      return Center(child: Text('Error: ${snapshot.error}'));
-                    } else {
-                      List<Map<String, dynamic>> userEvents =
-                          snapshot.data ?? [];
-                      if (userEvents.isEmpty) {
-                        return Center(
-                          child: Text(
-                            'Create your first event',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontStyle: FontStyle.italic,
+                  FutureBuilder<List<Map<String, dynamic>>>(
+                    future: fetchUserEvents(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return Center(child: CircularProgressIndicator());
+                      } else if (snapshot.hasError) {
+                        return Center(child: Text('Error: ${snapshot.error}'));
+                      } else {
+                        List<Map<String, dynamic>> userEvents =
+                            snapshot.data ?? [];
+                        if (userEvents.isEmpty) {
+                          return SizedBox(
+                            width: 350,
+                            child: InkWell(
+                              onTap:
+                                  _createEvent, // Call _createEvent function on tap
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(10.0),
+                                ),
+                                padding: EdgeInsets.all(16.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Create your first event',
+                                      style: TextStyle(
+                                        fontSize: 20.0,
+                                        fontStyle: FontStyle.italic,
+                                        color: Colors.blue,
+                                      ),
+                                    ),
+                                    SizedBox(height: 16.0),
+                                    Text(
+                                      'Click here to create an event',
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
-                          ),
+                          );
+                        }
+                        return ListView.builder(
+                          shrinkWrap: true,
+                          physics: NeverScrollableScrollPhysics(),
+                          itemCount: userEvents.length,
+                          itemBuilder: (context, index) {
+                            final event = userEvents[index];
+                            return EventListTile(
+                              eventName: event['eventName'],
+                              eventStartDate: event['startTime'],
+                              eventEndDate: event['endTime'],
+                              onTap: () async {
+                                final eventId =
+                                    await _fetchEventIdFromFirestore(
+                                        event['eventName']);
+                                if (eventId != null) {
+                                  _openEventDescriptionPage(
+                                    eventName: event['eventName'],
+                                    eventId: eventId,
+                                    eventStartDate: event['startTime'],
+                                    eventEndDate: event['endTime'],
+                                    // Add other necessary parameters
+                                  );
+                                } else {
+                                  print(
+                                      'Event ID not found for ${event['eventName']}');
+                                }
+                              },
+                            );
+                          },
                         );
                       }
-                      return ListView.builder(
-                        shrinkWrap: true,
-                        physics: NeverScrollableScrollPhysics(),
-                        itemCount: userEvents.length,
-                        itemBuilder: (context, index) {
-                          final event = userEvents[index];
-                          return EventListTile(
-                            eventName: event['eventName'],
-                            eventStartDate: event['startTime'],
-                            eventEndDate: event['endTime'],
-                            onTap: () async {
-                              final eventId = await _fetchEventIdFromFirestore(
-                                  event['eventName']);
-                              if (eventId != null) {
-                                _openEventDescriptionPage(
-                                  eventName: event['eventName'],
-                                  eventId: eventId,
-                                  eventStartDate: event['startTime'],
-                                  eventEndDate: event['endTime'],
-                                  // Add other necessary parameters
-                                );
-                              } else {
-                                print(
-                                    'Event ID not found for ${event['eventName']}');
-                              }
-                            },
-                          );
-                        },
-                      );
-                    }
-                  },
-                ),
-              ],
-            ),
-
-            // Events Participated Section
-            Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Align(
-                    alignment: Alignment.topLeft,
-                    child: Text(
-                      'Events Participated',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
+                    },
+                  ),
+                ],
+              ),
+              SizedBox(
+                height: 30,
+              ),
+              // Events Participated Section
+              Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: Text(
+                        'Events Participated',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                FutureBuilder<List<Map<String, dynamic>>>(
-                  future: fetchParticipantEvents(),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return Center(child: CircularProgressIndicator());
-                    } else if (snapshot.hasError) {
-                      return Center(child: Text('Error: ${snapshot.error}'));
-                    } else {
-                      List<Map<String, dynamic>> participantEvents =
-                          snapshot.data ?? [];
-                      if (participantEvents.isEmpty) {
-                        return Center(
-                          child: Text(
-                            'Scan code to join events',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontStyle: FontStyle.italic,
+                  FutureBuilder<List<Map<String, dynamic>>>(
+                    future: fetchParticipantEvents(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return Center(child: CircularProgressIndicator());
+                      } else if (snapshot.hasError) {
+                        return Center(child: Text('Error: ${snapshot.error}'));
+                      } else {
+                        List<Map<String, dynamic>> participantEvents =
+                            snapshot.data ?? [];
+                        if (participantEvents.isEmpty) {
+                          return InkWell(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => ScanCodePage(
+                                    onEventJoined: _updateEventList,
+                                  ),
+                                ),
+                              );
+                            },
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(10.0),
+                              ),
+                              padding: EdgeInsets.all(16.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Scan code to join events',
+                                    style: TextStyle(
+                                      fontSize: 20.0,
+                                      fontStyle: FontStyle.italic,
+                                      color: Colors.blue,
+                                    ),
+                                  ),
+                                  SizedBox(height: 16.0),
+                                  Text(
+                                    'Click here to scan code and join events',
+                                    style: TextStyle(
+                                      fontSize: 18.0,
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
+                          );
+                        }
+                        return ListView.builder(
+                          shrinkWrap: true,
+                          physics: NeverScrollableScrollPhysics(),
+                          itemCount: participantEvents.length,
+                          itemBuilder: (context, index) {
+                            final event = participantEvents[index];
+                            return EventListTile(
+                              eventName: event['eventName'],
+                              eventStartDate: event['startTime'],
+                              eventEndDate: event['endTime'],
+                              onTap: () async {
+                                final eventId =
+                                    await _fetchEventIdForParticipantFromFirestore(
+                                        event['eventName']);
+                                if (eventId != null) {
+                                  print(
+                                      'Event ID found for ${event['eventName']}: $eventId');
+                                  _openEventDescriptionPage(
+                                    eventName: event['eventName'],
+                                    eventId: eventId,
+                                    eventStartDate: event['startTime'],
+                                    eventEndDate: event['endTime'],
+                                    // Add other necessary parameters
+                                  );
+                                } else {
+                                  // Handle the case where event ID is not found
+                                  print(
+                                      'Event ID not found for ${event['eventName']}');
+                                }
+                              },
+                            );
+                          },
                         );
                       }
-                      return ListView.builder(
-                        shrinkWrap: true,
-                        physics: NeverScrollableScrollPhysics(),
-                        itemCount: participantEvents.length,
-                        itemBuilder: (context, index) {
-                          final event = participantEvents[index];
-                          return EventListTile(
-                            eventName: event['eventName'],
-                            eventStartDate: event['startTime'],
-                            eventEndDate: event['endTime'],
-                            onTap: () async {
-                              final eventId =
-                                  await _fetchEventIdForParticipantFromFirestore(
-                                      event['eventName']);
-                              if (eventId != null) {
-                                print(
-                                    'Event ID found for ${event['eventName']}: $eventId');
-                                _openEventDescriptionPage(
-                                  eventName: event['eventName'],
-                                  eventId: eventId,
-                                  eventStartDate: event['startTime'],
-                                  eventEndDate: event['endTime'],
-                                  // Add other necessary parameters
-                                );
-                              } else {
-                                // Handle the case where event ID is not found
-                                print(
-                                    'Event ID not found for ${event['eventName']}');
-                              }
-                            },
-                          );
-                        },
-                      );
-                    }
-                  },
-                ),
-              ],
-            ),
-          ],
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
       bottomNavigationBar: BottomNavigationBar(
@@ -803,10 +939,6 @@ class _HomeScreenState extends State<HomeScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.qr_code_scanner_outlined),
             label: 'Scan QR',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.settings),
-            label: 'Settings',
           ),
         ],
         currentIndex: _selectedIndex,
@@ -961,7 +1093,7 @@ class EventListTile extends StatelessWidget {
                 bottomRight: Radius.circular(8),
               ),
               child: Image.asset(
-                "assets/sign_in.png", // Add your asset path
+                "assets/event_logo.png", // Add your asset path
                 height: 100,
                 width: 120,
                 fit: BoxFit.cover,

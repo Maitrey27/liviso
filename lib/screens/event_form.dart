@@ -71,53 +71,53 @@ class _EventFormState extends State<EventForm> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Create Event'),
-      ),
+          // title: Text('Create Event'),
+          ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            GestureDetector(
-              onTap: _pickImageFromGallery,
-              child: Container(
-                width: double.infinity,
-                height: 200,
-                decoration: BoxDecoration(
-                  // color: Colors.grey[200],
-                  color: Color(0xff29404E),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: _selectedImage != null
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.file(
-                          _selectedImage!,
-                          fit: BoxFit.cover,
-                        ),
-                      )
-                    : Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.add_a_photo_outlined,
-                            size: 42,
-                            color: Colors.white,
-                          ),
-                          SizedBox(
-                            height: 8,
-                          ),
-                          Text(
-                            "Add Event Image",
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          )
-                        ],
-                      ),
-              ),
-            ),
+            // GestureDetector(
+            //   onTap: _pickImageFromGallery,
+            //   child: Container(
+            //     width: double.infinity,
+            //     height: 200,
+            //     decoration: BoxDecoration(
+            //       // color: Colors.grey[200],
+            //       color: Color(0xff29404E),
+            //       borderRadius: BorderRadius.circular(8),
+            //     ),
+            //     child: _selectedImage != null
+            //         ? ClipRRect(
+            //             borderRadius: BorderRadius.circular(8),
+            //             child: Image.file(
+            //               _selectedImage!,
+            //               fit: BoxFit.cover,
+            //             ),
+            //           )
+            //         : Column(
+            //             mainAxisAlignment: MainAxisAlignment.center,
+            //             children: [
+            //               Icon(
+            //                 Icons.add_a_photo_outlined,
+            //                 size: 42,
+            //                 color: Colors.white,
+            //               ),
+            //               SizedBox(
+            //                 height: 8,
+            //               ),
+            //               Text(
+            //                 "Add Event Image",
+            //                 style: TextStyle(
+            //                   color: Colors.white,
+            //                   fontWeight: FontWeight.w600,
+            //                 ),
+            //               )
+            //             ],
+            //           ),
+            //   ),
+            // ),
             SizedBox(height: 16),
             Text(
               'Create an Event',

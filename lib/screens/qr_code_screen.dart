@@ -1,16 +1,24 @@
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_dynamic_links/firebase_dynamic_links.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:image_gallery_saver/image_gallery_saver.dart';
 import 'package:liviso/screens/event_success_screen.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:screenshot/screenshot.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class QrCodeScreen extends StatefulWidget {
   final String eventId;
+  final String eventName;
 
-  QrCodeScreen({required this.eventId});
+  QrCodeScreen({required this.eventId, required this.eventName});
 
   @override
   _QrCodeScreenState createState() => _QrCodeScreenState();
@@ -20,6 +28,8 @@ class _QrCodeScreenState extends State<QrCodeScreen> {
   // Replace "https://liviso.page.link/6SuK" with your actual Dynamic Link
   late final String _dynamicLink;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final ScreenshotController _screenshotController = ScreenshotController();
+  final GlobalKey _qrCodeKey = GlobalKey();
 
   @override
   void initState() {
@@ -147,8 +157,39 @@ class _QrCodeScreenState extends State<QrCodeScreen> {
     }
   }
 
-  void _shareQRCode() {
-    Share.share('Check out this event QR code: $_dynamicLink');
+  Future<void> _shareQRCode() async {
+    try {
+      // Capture the QR code image using ScreenshotController
+      final imageBytes = await _screenshotController.capture();
+
+      if (imageBytes != null) {
+        // Save the QR code image to a temporary file
+        final tempDir = await getTemporaryDirectory();
+        final tempFilePath = '${tempDir.path}/qr_code_image.png';
+        final imageFile = File(tempFilePath);
+        await imageFile.writeAsBytes(imageBytes);
+
+        // Check if the file exists before sharing
+        final bool exists = await imageFile.exists();
+
+        if (exists) {
+          // Share the QR code image along with the text
+          await Share.shareFiles(
+            [tempFilePath],
+            text:
+                'Join the event "${widget.eventName}" by scanning this QR code!',
+            subject: 'Event QR Code',
+            // You can also provide a subject for email applications
+          );
+        } else {
+          print('Image file does not exist at path: $tempFilePath');
+        }
+      } else {
+        print('Failed to capture QR code image.');
+      }
+    } catch (e) {
+      print('Error sharing QR code: $e');
+    }
   }
 
   @override
@@ -171,18 +212,36 @@ class _QrCodeScreenState extends State<QrCodeScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              color: Theme.of(context)
-                  .backgroundColor, // Use the background color of the theme
-              padding: EdgeInsets.all(20.0),
-              child: QrImageView(
-                data: _dynamicLink,
-                backgroundColor: Colors.white, // Background color of QR code
-                foregroundColor: Colors.black, // Color of QR code data
-                size: 250.0,
+            Flexible(
+              // Use Flexible widget to allow text to wrap
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                child: Text(
+                  'SCAN THE QR TO JOIN THE EVENT ${widget.eventName}',
+                  textAlign: TextAlign.center, // Align text to center
+                  style: TextStyle(
+                    fontSize: 20.0,
+                    fontStyle: FontStyle.italic,
+                    color: Colors.blue,
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 20),
+            Screenshot(
+              controller: _screenshotController,
+              child: Container(
+                color: Theme.of(context).backgroundColor,
+                padding: EdgeInsets.all(20.0),
+                child: QrImageView(
+                  data: _dynamicLink,
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.black,
+                  size: 250.0,
+                  key: _qrCodeKey,
+                ),
+              ),
+            ),
           ],
         ),
       ),

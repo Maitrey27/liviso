@@ -11,8 +11,8 @@ class LoginScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Login'),
-      ),
+          // title: const Text('Login'),
+          ),
       body: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
@@ -22,9 +22,9 @@ class LoginScreen extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.all(10.0),
                 child: Image(
-                  height: 200,
+                  height: 100,
                   width: 200,
-                  image: AssetImage("assets/sign_in.png"),
+                  image: AssetImage("assets/logoWhite1.png"),
                 ),
               ),
               Text(
@@ -64,11 +64,7 @@ class _LoginFormState extends State<LoginForm> {
       );
 
       // Show Snackbar for successful login
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Login successful!'),
-        ),
-      );
+      _showSnackbar('Login successful!');
       print("User Display Name: ${_auth.currentUser?.displayName}");
       // Navigate to home screen
       Navigator.pushReplacement(
@@ -81,18 +77,10 @@ class _LoginFormState extends State<LoginForm> {
       if (e is FirebaseAuthException) {
         if (e.code == 'user-not-found' || e.code == 'wrong-password') {
           // Show Snackbar for incorrect email or password
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Incorrect email or password. Please try again.'),
-            ),
-          );
+          _showSnackbar('Incorrect email or password. Please try again.');
         } else {
           // Show a generic error message for other errors
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('An error occurred. Please try again later.'),
-            ),
-          );
+          _showSnackbar('An error occurred. Please try again later.');
         }
       }
     }
@@ -112,11 +100,8 @@ class _LoginFormState extends State<LoginForm> {
         await _auth.signInWithCredential(credential);
 
         // Show Snackbar for successful Google sign-in
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Google sign-in successful!'),
-          ),
-        );
+
+        _showSnackbar('Google sign-in successful!');
 
         // Navigate to home screen
         Navigator.pushReplacement(
@@ -127,12 +112,36 @@ class _LoginFormState extends State<LoginForm> {
     } catch (e) {
       // Handle Google Sign-In errors
       print("Error: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Failed to sign in with Google. Please try again.'),
-        ),
-      );
+
+      _showSnackbar('Failed to sign in with Google. Please try again.');
     }
+  }
+
+  void _showSnackbar(String message) {
+    final snackBar = SnackBar(
+      elevation: 8.0,
+      backgroundColor: Colors.black38,
+      content: Container(
+        height: 50,
+        child: Row(
+          children: [
+            Icon(Icons.check_circle_outline, color: Colors.white),
+            SizedBox(width: 8.0),
+            Flexible(
+              child: Text(
+                message,
+                style: TextStyle(color: Colors.blue, fontSize: 16.0),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 2, // Adjust as needed
+              ),
+            ),
+          ],
+        ),
+      ),
+      behavior: SnackBarBehavior.floating,
+      duration: Duration(seconds: 4),
+    );
+    ScaffoldMessenger.of(context).showSnackBar(snackBar);
   }
 
   Future<void> _resetPassword() async {

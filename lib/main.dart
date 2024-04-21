@@ -9,6 +9,7 @@ import 'package:liviso/bloc/auth/auth_bloc.dart';
 import 'package:liviso/screens/home_screen.dart';
 import 'package:liviso/screens/login_screen.dart';
 import 'package:liviso/screens/qr_code_screen.dart';
+import 'package:liviso/services/notifications_controller.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'firebase_options.dart';
 
@@ -17,20 +18,7 @@ void main() async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   User? user = FirebaseAuth.instance.currentUser;
   tz.initializeTimeZones();
-  AwesomeNotifications().initialize(
-    null,
-    [
-      NotificationChannel(
-        channelKey: 'basic_channel',
-        channelName: 'Basic notifications',
-        channelDescription: 'Notification channel for basic notifications',
-        defaultColor: Colors.blue,
-        ledColor: Colors.blue,
-        playSound: true,
-        enableVibration: true,
-      ),
-    ],
-  );
+  await NotificationController.initializeLocalNotifications();
 
   // Check notification permissions
   bool isPermissionGranted =
@@ -74,6 +62,8 @@ Future<void> handleDynamicLink() async {
 }
 
 class MyApp extends StatelessWidget {
+  static final GlobalKey<NavigatorState> navigatorKey =
+      GlobalKey<NavigatorState>();
   final User? user;
   const MyApp({
     Key? key,
@@ -86,6 +76,7 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Liviso App',
       theme: ThemeData.dark(),
+      navigatorKey: navigatorKey,
       home: MultiBlocProvider(
         providers: [
           BlocProvider(

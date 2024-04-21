@@ -8,35 +8,56 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 
 class PreviewPhotosScreen extends StatelessWidget {
-  final File? selectedImage;
+  final List<File> selectedImages;
   final String eventId;
+  final Function(String) updatePhotoUrls;
 
   const PreviewPhotosScreen({
     Key? key,
-    required this.selectedImage,
+    required this.selectedImages,
     required this.eventId,
+    required this.updatePhotoUrls,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Preview Photo'),
+        title: Text('Preview Photos'),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Expanded(
-              child: selectedImage != null
-                  ? Image.file(selectedImage!)
-                  : Center(child: Text('No image selected')),
-            ),
+            // Check if only one image is selected
+            selectedImages.length == 1
+                ? Expanded(
+                    child: Image.file(
+                      selectedImages.first,
+                      fit: BoxFit.cover,
+                    ),
+                  )
+                : Expanded(
+                    child: GridView.builder(
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 3,
+                        crossAxisSpacing: 4.0,
+                        mainAxisSpacing: 4.0,
+                      ),
+                      itemCount: selectedImages.length,
+                      itemBuilder: (context, index) {
+                        return Image.file(
+                          selectedImages[index],
+                          fit: BoxFit.cover,
+                        );
+                      },
+                    ),
+                  ),
             SizedBox(height: 16.0),
             _buildButton(
-              label: 'Upload Image',
-              onPressed: () => _uploadImage(context),
+              label: 'Upload Images',
+              onPressed: () => _uploadImages(context),
             ),
             SizedBox(height: 16.0),
             _buildButton(
@@ -71,65 +92,76 @@ class PreviewPhotosScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _uploadImage(BuildContext context) async {
-    if (selectedImage == null) {
-      // No image selected, show a message or return early
-      return;
-    }
-
+  Future<void> _uploadImages(BuildContext context) async {
     try {
       final FirebaseAuth auth = FirebaseAuth.instance;
       final FirebaseStorage storage = FirebaseStorage.instance;
-
-      final String userId = auth.currentUser!.uid;
-
-      // Create a user-specific folder in Firebase Storage
-      final String userFolder = 'users/$userId';
-      final String fileName = DateTime.now().toString();
-      final Reference storageReference =
-          storage.ref().child('$userFolder/images/$fileName.png');
-
-      // Compress the image before uploading
-      final Uint8List compressedImage = await _compressImage(selectedImage!);
-
-      // Upload the compressed image to Firebase Storage
-      final UploadTask uploadTask = storageReference.putData(compressedImage);
-      final TaskSnapshot storageTask = await uploadTask.whenComplete(() {});
-
-      // Get the download URL of the uploaded image
-      final String downloadURL = await storageTask.ref.getDownloadURL();
-
-      // Create a Firestore collection for event photos
       final CollectionReference eventPhotosCollection = FirebaseFirestore
           .instance
           .collection('users')
-          .doc(userId)
+          .doc(auth.currentUser!.uid)
           .collection('events')
           .doc(eventId)
           .collection('photos');
+      // Show uploading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false, // Prevent dismissing by tapping outside
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: Text('Uploading Images'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16.0),
+                Text('Please wait...'),
+              ],
+            ),
+          );
+        },
+      );
 
-      // Add the uploaded image to Firestore
-      await eventPhotosCollection.add({
-        'userId': userId,
-        'downloadURL': downloadURL,
-        'timestamp': FieldValue.serverTimestamp(),
-      });
+      for (final image in selectedImages) {
+        final String fileName =
+            DateTime.now().millisecondsSinceEpoch.toString();
+        final Reference storageReference = storage
+            .ref()
+            .child('users/${auth.currentUser!.uid}/images/$fileName.png');
 
-      // Show Snackbar after successful upload
+        final Uint8List compressedImage = await _compressImage(image);
+
+        final UploadTask uploadTask = storageReference.putData(compressedImage);
+        final TaskSnapshot storageTask = await uploadTask.whenComplete(() {});
+
+        final String downloadURL = await storageTask.ref.getDownloadURL();
+
+        await eventPhotosCollection.add({
+          'userId': auth.currentUser!.uid,
+          'downloadURL': downloadURL,
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+
+        updatePhotoUrls(downloadURL);
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Image uploaded SuccessFully!'),
+          backgroundColor: Colors.black38,
+          content: Text('Images uploaded successfully!',
+              style: TextStyle(color: Colors.blue, fontSize: 16.0)),
         ),
       );
 
-      // Navigate back to EventDescriptionPage
-      Navigator.pop(context);
+      Navigator.pop(context); // Navigate back to EventDescriptionPage
+      Navigator.pop(context); // Navigate back to EventDescriptionPage
     } catch (e) {
-      // Handle both Firebase and Firestore errors here
-      print("Error: $e");
+      print("Error uploading images: $e");
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error: $e'),
+          backgroundColor: Colors.redAccent,
+          content: Text('Error uploading images: $e',
+              style: TextStyle(color: Colors.blue, fontSize: 16.0)),
         ),
       );
     }

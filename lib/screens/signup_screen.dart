@@ -20,25 +20,22 @@ class _SignUpScreenState extends State<SignUpScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Sign Up'),
-      ),
+          // title: Text('Sign Up'),
+          ),
       body: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Image(
-                  height: 200,
-                  width: 200,
-                  image: AssetImage("assets/sign_in.png"),
-                ),
+              Image(
+                height: 100,
+                width: 200,
+                image: AssetImage("assets/logoWhite1.png"),
               ),
-              const SizedBox(
-                height: 10,
-              ),
+              // const SizedBox(
+              //   height: 10,
+              // ),
               SignUpForm(),
             ],
           ),
@@ -76,14 +73,38 @@ class _SignUpFormState extends State<SignUpForm> {
     return null;
   }
 
+  void _showSnackbar(String message) {
+    final snackBar = SnackBar(
+      elevation: 8.0,
+      backgroundColor: Colors.black38,
+      content: Container(
+        height: 50,
+        child: Row(
+          children: [
+            Icon(Icons.check_circle_outline, color: Colors.white),
+            SizedBox(width: 8.0),
+            Flexible(
+              child: Text(
+                message,
+                style: TextStyle(color: Colors.blue, fontSize: 16.0),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 2, // Adjust as needed
+              ),
+            ),
+          ],
+        ),
+      ),
+      behavior: SnackBarBehavior.floating,
+      duration: Duration(seconds: 4),
+    );
+    ScaffoldMessenger.of(context).showSnackBar(snackBar);
+  }
+
   Future<void> _signUpWithEmailAndPassword() async {
     final String? passwordError = _validatePassword();
     if (passwordError != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(passwordError),
-        ),
-      );
+      _showSnackbar(passwordError);
+
       return;
     }
 
@@ -103,7 +124,7 @@ class _SignUpFormState extends State<SignUpForm> {
       );
 
       // Send email verification
-      await credential.user!.sendEmailVerification();
+      // await credential.user!.sendEmailVerification();
 
       // Store additional user details in Firestore
       await FirebaseFirestore.instance.collection('users').doc(userId).set({
@@ -113,12 +134,8 @@ class _SignUpFormState extends State<SignUpForm> {
       });
 
       // Show a message to inform the user to check their email for verification
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-              'Verification email sent. Please check your email to verify your account.'),
-        ),
-      );
+
+      _showSnackbar('Email Registered SuccessFully!.');
 
       // Navigate back to login screen
       Navigator.pop(context);

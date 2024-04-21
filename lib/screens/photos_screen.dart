@@ -384,15 +384,76 @@ class FullScreenImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
-        child: GestureDetector(
-          onTap: () {
-            // Pop the screen when tapped
+      appBar: AppBar(
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back),
+          onPressed: () {
+            // Pop the screen when back button is pressed
             Navigator.pop(context);
           },
-          child: Image.network(url),
         ),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.file_download),
+            onPressed: () => _downloadImage(context, url),
+          ),
+        ],
+      ),
+      body: Center(
+        child: Image.network(url),
       ),
     );
+  }
+
+  Future<void> _downloadImage(BuildContext context, String imageUrl) async {
+    // Implement your download logic here
+    Fluttertoast.showToast(
+      msg: 'Downloading image...',
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.BOTTOM,
+    );
+
+    // You can replace the following code with your own download logic using dio
+    try {
+      Dio dio = Dio();
+      Response response = await dio.get(
+        imageUrl,
+        options: Options(responseType: ResponseType.bytes),
+      );
+
+      // Get the documents directory using path_provider
+      final String documentsPath =
+          (await getApplicationDocumentsDirectory()).path;
+
+      // Create a subdirectory named 'downloads' within the documents directory
+      final String downloadsPath = '$documentsPath/downloads';
+      await Directory(downloadsPath).create(recursive: true);
+
+      // Generate a unique file name for the downloaded image
+      String fileName = 'image_${DateTime.now().millisecondsSinceEpoch}.png';
+      String savePath = '$downloadsPath/$fileName';
+
+      // Save the downloaded image to the 'downloads' subdirectory
+      await File(savePath).writeAsBytes(response.data);
+
+      // Open the downloaded image using the platform's file opener
+      OpenFile.open(savePath);
+
+      // Save the image to the phone's gallery
+      await ImageGallerySaver.saveFile(savePath);
+
+      Fluttertoast.showToast(
+        msg: 'Image downloaded and saved to gallery successfully!',
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+      );
+    } catch (e) {
+      print("Error downloading image: $e");
+      Fluttertoast.showToast(
+        msg: 'Error downloading image. Please try again.',
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+      );
+    }
   }
 }
